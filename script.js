@@ -5,7 +5,7 @@ const chatContainer = document.getElementById('chat-container');
 const themeToggle = document.getElementById('theme-toggle');
 
 // --- OLLAMA CONFIGURATION ---
-const NGROK_URL = " https://inge-unidolized-kaylee.ngrok-free.dev"; // PASTE YOUR NGROK URL HERE
+const NGROK_URL = "https://inge-unidolized-kaylee.ngrok-free.dev"; // PASTE YOUR NGROK URL HERE
 const MODEL_NAME = "qwen2.5:32b";
 let isGenerating = false; 
 
@@ -51,6 +51,7 @@ async function sendMessage() {
         const response = await fetch(`${NGROK_URL}/api/generate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            'ngrok-skip-browser-warning': '1'
             body: JSON.stringify({
                 model: MODEL_NAME,
                 prompt: text,
@@ -112,7 +113,7 @@ function appendBotMessage(text) {
     const avatar = document.createElement('div');
     avatar.className = 'bot-avatar';
     
-    avatar.innerHTML = `<img src="assets/bot-icon.png" alt="Bot Picture">`; 
+    avatar.innerHTML = `<img src="assets/image.png" alt="Bot Picture">`; 
     
     const content = document.createElement('div');
     content.className = 'bot-content';
