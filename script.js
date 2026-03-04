@@ -51,7 +51,6 @@ async function sendMessage() {
         const response = await fetch(`${NGROK_URL}/api/generate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json',
-                'ngrok-skip-browser-warning': '1'
              },
            
             body: JSON.stringify({
