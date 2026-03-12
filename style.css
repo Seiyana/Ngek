@@ -121,7 +121,6 @@ body {
     transition: background-color 0.3s;
 }
 
-/* Circular Image Container */
 .bot-avatar {
     min-width: 36px;
     height: 36px;
@@ -183,7 +182,7 @@ body {
 }
 
 .stop-btn {
-    display:none;
+    display:none !important;
     background: transparent;
     border: none;
     cursor: pointer;
@@ -249,4 +248,33 @@ textarea::placeholder {
 .send-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+/* --- Suggestion Bubbles --- */
+.suggestions-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+    max-width: 85%;
+    margin-left: 52px; /* aligns with bot message content */
+}
+
+.suggestion-bubble {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    border-radius: 20px;
+    padding: 8px 16px;
+    font-size: 0.875rem;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s;
+    text-align: left;
+}
+
+.suggestion-bubble:hover {
+    background-color: var(--surface-color);
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
 }

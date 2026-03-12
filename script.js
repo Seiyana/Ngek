@@ -39,7 +39,7 @@ async function sendMessage() {
 
     isGenerating = true;
     sendBtn.style.display = 'none';
-    stopBtn.style.display = 'flex';
+    stopBtn.style.setProperty('display', 'flex', 'important');
 
     appendUserMessage(text);
     textarea.value = '';
@@ -97,7 +97,7 @@ async function sendMessage() {
     } finally {
         isGenerating = false;
         sendBtn.style.display = 'flex';
-        stopBtn.style.display = 'none';
+        stopBtn.style.setProperty('display', 'none', 'important');
         sendBtn.disabled = false;
         currentReader = null;
     }
