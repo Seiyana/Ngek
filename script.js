@@ -33,6 +33,47 @@ sendBtn.addEventListener('click', () => {
     if (!isGenerating) sendMessage();
 });
 
+async function fetchSuggestions(userPrompt, botResponse) {
+    try {
+        const res = await fetch(`${NGROK_URL}/api/suggest`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: userPrompt, response: botResponse })
+        });
+        const data = await res.json();
+        return data.suggestions || [];
+    } catch (e) {
+        console.error("Suggestions error:", e);
+        return [];
+    }
+}
+
+function appendSuggestions(suggestions, originalPrompt) {
+    if (!suggestions.length) return;
+
+    const row = document.createElement('div');
+    row.className = 'suggestions-row';
+
+    suggestions.forEach(text => {
+        const bubble = document.createElement('button');
+        bubble.className = 'suggestion-bubble';
+        bubble.textContent = text;
+        bubble.addEventListener('click', () => {
+            // Remove suggestions after clicking
+            row.remove();
+            // Set the textarea to the suggestion and send
+            textarea.value = text;
+            textarea.style.height = '24px';
+            textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+            sendMessage();
+        });
+        row.appendChild(bubble);
+    });
+
+    messagesWrapper.appendChild(row);
+    scrollToBottom();
+}
+
 async function sendMessage() {
     const text = textarea.value.trim();
     if (!text) return;
@@ -99,7 +140,9 @@ async function sendMessage() {
         sendBtn.style.display = 'flex';
         stopBtn.style.setProperty('display', 'none', 'important');
         sendBtn.disabled = false;
-        currentReader = null;
+        
+         const suggestions = await fetchSuggestions(text, responseTextElement.textContent);
+    appendSuggestions(suggestions, text);
     }
 }
 
