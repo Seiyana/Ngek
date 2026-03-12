@@ -30,7 +30,6 @@ body {
     transition: background-color 0.3s, color 0.3s;
 }
 
-/* --- Header Styling --- */
 .top-header {
     display: flex;
     justify-content: space-between;
@@ -48,6 +47,17 @@ body {
     gap: 12px;
     font-weight: 600;
     font-size: 1.1rem;
+}
+
+.bot-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    overflow: hidden;
+    background-color: var(--surface-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .theme-toggle-btn {
@@ -170,6 +180,25 @@ body {
     box-sizing: border-box;
     gap: 10px;
     transition: background-color 0.3s;
+}
+
+.stop-btn {
+    display:none;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: #e8a0a0;
+    transition: color 0.2s, background-color 0.2s;
+}
+
+.stop-btn:hover {
+    background-color: var(--border-color);
+    color: #d96b6b;
 }
 
 textarea {

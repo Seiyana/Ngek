@@ -8,6 +8,7 @@ const themeToggle = document.getElementById('theme-toggle');
 const NGROK_URL = "http://localhost:5000"; // PASTE YOUR NGROK URL HERE
 const MODEL_NAME = "qwen2.5:32b";
 let isGenerating = false; 
+let currentReader = null;
 
 // Theme Toggle Logic
 themeToggle.addEventListener('click', () => {
@@ -37,47 +38,44 @@ async function sendMessage() {
     if (!text) return;
 
     isGenerating = true;
-    sendBtn.disabled = true;
+    sendBtn.style.display = 'none';
+    stopBtn.style.display = 'flex';
 
     appendUserMessage(text);
     textarea.value = '';
     textarea.style.height = '24px';
     scrollToBottom();
 
-    const botRow = appendBotMessage(""); 
+    const botRow = appendBotMessage("");
     const responseTextElement = botRow.querySelector('p');
 
     try {
         const response = await fetch(`${NGROK_URL}/api/generate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json',
-             },
-           
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 model: MODEL_NAME,
                 prompt: text,
-                stream: true 
+                stream: true
             })
         });
 
         if (!response.ok) throw new Error("Network response was not ok");
 
-        const reader = response.body.getReader();
+        currentReader = response.body.getReader();
         const decoder = new TextDecoder();
-        let buffer = ''; 
+        let buffer = '';
 
         while (true) {
-            const { done, value } = await reader.read();
+            const { done, value } = await currentReader.read();
             if (done) break;
 
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
-            
-            buffer = lines.pop(); 
+            buffer = lines.pop();
 
             for (const line of lines) {
                 if (!line.trim()) continue;
-                
                 try {
                     const json = JSON.parse(line);
                     if (json.response) {
@@ -90,13 +88,28 @@ async function sendMessage() {
             }
         }
     } catch (error) {
-        responseTextElement.textContent = "Error: Could not connect to Ollama. Check your ngrok URL and ensure OLLAMA_ORIGINS=\"*\" is set.";
-        console.error(error);
+        if (error.name === 'AbortError' || error.message.includes('cancel')) {
+            // Stream was cancelled by user, do nothing
+        } else {
+            responseTextElement.textContent = "Error: Could not connect to Ollama.";
+            console.error(error);
+        }
     } finally {
         isGenerating = false;
+        sendBtn.style.display = 'flex';
+        stopBtn.style.display = 'none';
         sendBtn.disabled = false;
+        currentReader = null;
     }
 }
+
+// Add stop button logic
+const stopBtn = document.getElementById('stop-btn');
+stopBtn.addEventListener('click', () => {
+    if (currentReader) {
+        currentReader.cancel();
+    }
+});
 
 function appendUserMessage(text) {
     const row = document.createElement('div');

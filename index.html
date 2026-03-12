@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dynamic Chat Layout with Theme Toggle</title>
+    <title>SeiBot</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
     <header class="top-header">
         <div class="bot-identity">
-            <div class="bot-avatar" style="width: 32px; height: 32px;">
+            <div class="bot-avatar">
                 <img src="assets/image.png" alt="Bot Picture">
             </div>
-            <span>My Assistant</span>
+            <span>SeiBot - Your Academic Assistant</span>
         </div>
         <button class="theme-toggle-btn" id="theme-toggle">Dark Mode</button>
     </header>
@@ -26,7 +26,7 @@
                     <img src="assets/image.png" alt="Bot Picture">
                 </div>
                 <div class="bot-content">
-                    <p>Hello! I'm connected to Qwen 2.5 on your local machine.</p>
+                    <p>Hello! I'm SeiBot. How can I assist you today?</p>
                 </div>
             </div>
 
@@ -36,6 +36,12 @@
     <div class="input-container">
         <div class="input-wrapper">
             <textarea id="user-input" placeholder="Enter a prompt here" rows="1"></textarea>
+
+            <button class="stop-btn" id="stop-btn" aria-label="Stop generation" >
+        <svg viewBox="0 0 24 24" width="24" height="24">
+            <rect x="6" y="6" width="12" height="12" fill="currentColor"/>
+        </svg>
+    </button>
             <button class="send-btn" id="send-btn" aria-label="Send message">
                 <svg viewBox="0 0 24 24">
                     <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
