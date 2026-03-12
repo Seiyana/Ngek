@@ -82,6 +82,10 @@ async function sendMessage() {
     sendBtn.style.display = 'none';
     stopBtn.style.setProperty('display', 'flex', 'important');
 
+    // Remove any existing suggestion bubbles
+    const existingSuggestions = document.querySelector('.suggestions-row');
+    if (existingSuggestions) existingSuggestions.remove();
+
     appendUserMessage(text);
     textarea.value = '';
     textarea.style.height = '24px';
@@ -89,6 +93,7 @@ async function sendMessage() {
 
     const botRow = appendBotMessage("");
     const responseTextElement = botRow.querySelector('p');
+    let fullBotResponse = '';
 
     try {
         const response = await fetch(`${NGROK_URL}/api/generate`, {
@@ -121,6 +126,7 @@ async function sendMessage() {
                     const json = JSON.parse(line);
                     if (json.response) {
                         responseTextElement.textContent += json.response;
+                        fullBotResponse += json.response;
                         scrollToBottom();
                     }
                 } catch (e) {
@@ -128,21 +134,27 @@ async function sendMessage() {
                 }
             }
         }
+
     } catch (error) {
         if (error.name === 'AbortError' || error.message.includes('cancel')) {
-            // Stream was cancelled by user, do nothing
+            // Stream cancelled by user, do nothing
         } else {
-            responseTextElement.textContent = "Error: Could not connect to Ollama.";
+            responseTextElement.textContent = "Error: Could not connect to Ollama. Check your server and ensure OLLAMA_ORIGINS='*' is set.";
             console.error(error);
         }
+
     } finally {
         isGenerating = false;
         sendBtn.style.display = 'flex';
         stopBtn.style.setProperty('display', 'none', 'important');
         sendBtn.disabled = false;
-        
-         const suggestions = await fetchSuggestions(text, responseTextElement.textContent);
-    appendSuggestions(suggestions, text);
+        currentReader = null;
+
+        // Only fetch suggestions if there was a valid response
+        if (fullBotResponse) {
+            const suggestions = await fetchSuggestions(text, fullBotResponse);
+            appendSuggestions(suggestions, text);
+        }
     }
 }
 
