@@ -1,21 +1,19 @@
-const textarea = document.getElementById('user-input');
-const sendBtn = document.getElementById('send-btn');
+const textarea        = document.getElementById('user-input');
+const sendBtn         = document.getElementById('send-btn');
 const messagesWrapper = document.getElementById('messages-wrapper');
-const chatContainer = document.getElementById('chat-container');
-const themeToggle = document.getElementById('theme-toggle');
+const chatContainer   = document.getElementById('chat-container');
+const themeToggle     = document.getElementById('theme-toggle');
 
 // ── CONFIGURATION ─────────────────────────────────────────────────────────────
-// ⚠️  Point this at your Flask server (port 5000), NOT Ollama (11434).
-//     In WSL, run:  ngrok http 5000   then paste the URL below.
+// ⚠️  Point this at Flask (port 5000).  Run:  ngrok http 5000
 const NGROK_URL  = "https://inge-unidolized-kaylee.ngrok-free.dev"; // ← update each session
 const MODEL_NAME = "qwen2.5:32b";
 
-// Required on every request to ngrok — without this, ngrok shows an HTML
-// interstitial warning page to external browsers instead of forwarding the
-// request, which causes Error 0 / Error 500 on all non-desktop devices.
+// ngrok-skip-browser-warning MUST be on every request or external devices
+// receive an HTML interstitial page instead of JSON → Error 0 / Error 500.
 const NGROK_HEADERS = {
-    "Content-Type": "application/json",
-    "ngrok-skip-browser-warning": "true",
+    "Content-Type":                "application/json",
+    "ngrok-skip-browser-warning":  "true",
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -37,15 +35,10 @@ const inputWrapper = document.querySelector('.input-wrapper');
 
 textarea.addEventListener('input', function () {
     this.style.height = 'auto';
-    const newHeight = this.scrollHeight;
-    if (newHeight <= MAX_HEIGHT) {
-        this.style.height   = newHeight + 'px';
-        this.style.overflowY = 'hidden';
-    } else {
-        this.style.height   = MAX_HEIGHT + 'px';
-        this.style.overflowY = 'auto';
-    }
-    inputWrapper.classList.toggle('multiline', newHeight > LINE_HEIGHT + 8);
+    const h = this.scrollHeight;
+    this.style.height    = Math.min(h, MAX_HEIGHT) + 'px';
+    this.style.overflowY = h > MAX_HEIGHT ? 'auto' : 'hidden';
+    inputWrapper.classList.toggle('multiline', h > LINE_HEIGHT + 8);
 });
 
 textarea.addEventListener('keydown', (e) => {
@@ -72,12 +65,142 @@ document.querySelectorAll('.suggestions-row .suggestion-bubble').forEach(bubble 
 });
 
 
-// ── Suggestions ───────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//  MARKDOWN RENDERER
+//  Converts the model's raw text (with ** bold **, * italic *, bullet lists,
+//  numbered lists, and inline code) into safe HTML nodes.
+//  No external library needed — pure DOM manipulation, no innerHTML on user text.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Parse a single line of text and return a DocumentFragment with inline
+ * formatting applied:  **bold**  *italic*  `code`
+ */
+function parseInline(text) {
+    const frag = document.createDocumentFragment();
+
+    // Regex that matches **bold**, *italic*, or `code` — in that priority order
+    const pattern = /(\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`)/g;
+    let last = 0, match;
+
+    while ((match = pattern.exec(text)) !== null) {
+        // Plain text before this match
+        if (match.index > last) {
+            frag.appendChild(document.createTextNode(text.slice(last, match.index)));
+        }
+
+        if (match[0].startsWith('**')) {
+            const b = document.createElement('strong');
+            b.textContent = match[2];
+            frag.appendChild(b);
+        } else if (match[0].startsWith('*')) {
+            const em = document.createElement('em');
+            em.textContent = match[3];
+            frag.appendChild(em);
+        } else {
+            // backtick code
+            const code = document.createElement('code');
+            code.textContent = match[4];
+            frag.appendChild(code);
+        }
+
+        last = match.index + match[0].length;
+    }
+
+    // Remaining plain text
+    if (last < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(last)));
+    }
+
+    return frag;
+}
+
+/**
+ * Convert a full bot response string into a DocumentFragment of block elements.
+ * Handles:
+ *   - Blank lines → paragraph breaks
+ *   - Lines starting with "- " or "* " → <ul><li>
+ *   - Lines starting with "N. " → <ol><li>
+ *   - Lines starting with "### / ## / #" → <h3/h2/h1>
+ *   - Everything else → <p>
+ *   - Inline **bold**, *italic*, `code` within any block
+ */
+function renderMarkdown(rawText) {
+    const container = document.createDocumentFragment();
+    const lines     = rawText.split('\n');
+
+    let currentUl   = null;   // active <ul> being built
+    let currentOl   = null;   // active <ol> being built
+
+    function flushLists() {
+        if (currentUl) { container.appendChild(currentUl); currentUl = null; }
+        if (currentOl) { container.appendChild(currentOl); currentOl = null; }
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trim = line.trim();
+
+        // ── Empty line ────────────────────────────────────────────────────────
+        if (!trim) {
+            flushLists();
+            continue;
+        }
+
+        // ── Headings ──────────────────────────────────────────────────────────
+        const headingMatch = trim.match(/^(#{1,3})\s+(.+)/);
+        if (headingMatch) {
+            flushLists();
+            const level = Math.min(headingMatch[1].length + 2, 6); // h3–h5 range
+            const h = document.createElement(`h${level}`);
+            h.appendChild(parseInline(headingMatch[2]));
+            container.appendChild(h);
+            continue;
+        }
+
+        // ── Unordered list item  (- text  or  * text) ────────────────────────
+        const ulMatch = trim.match(/^[-*]\s+(.+)/);
+        if (ulMatch) {
+            flushLists();   // don't flush the UL we're building — just OL
+            if (currentOl) { container.appendChild(currentOl); currentOl = null; }
+            if (!currentUl) currentUl = document.createElement('ul');
+            const li = document.createElement('li');
+            li.appendChild(parseInline(ulMatch[1]));
+            currentUl.appendChild(li);
+            continue;
+        }
+
+        // ── Ordered list item  (1. text) ─────────────────────────────────────
+        const olMatch = trim.match(/^\d+\.\s+(.+)/);
+        if (olMatch) {
+            if (currentUl) { container.appendChild(currentUl); currentUl = null; }
+            if (!currentOl) currentOl = document.createElement('ol');
+            const li = document.createElement('li');
+            li.appendChild(parseInline(olMatch[1]));
+            currentOl.appendChild(li);
+            continue;
+        }
+
+        // ── Regular paragraph ─────────────────────────────────────────────────
+        flushLists();
+        const p = document.createElement('p');
+        p.appendChild(parseInline(trim));
+        container.appendChild(p);
+    }
+
+    flushLists(); // append any list still open at end of text
+    return container;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  SUGGESTIONS
+// ═══════════════════════════════════════════════════════════════════════════════
 async function fetchSuggestions(userPrompt, botResponse) {
     try {
         const res = await fetch(`${NGROK_URL}/api/suggest`, {
             method:  'POST',
-            headers: NGROK_HEADERS,           // ← ngrok header required here too
+            headers: NGROK_HEADERS,
             body:    JSON.stringify({ prompt: userPrompt, response: botResponse }),
         });
         if (!res.ok) return [];
@@ -97,23 +220,25 @@ function appendSuggestions(suggestions) {
     const row = document.createElement('div');
     row.className = 'suggestions-row';
     suggestions.forEach(text => {
-        const bubble = document.createElement('button');
-        bubble.className = 'suggestion-bubble';
-        bubble.textContent = text;
-        bubble.addEventListener('click', () => {
+        const btn = document.createElement('button');
+        btn.className   = 'suggestion-bubble';
+        btn.textContent = text;
+        btn.addEventListener('click', () => {
             row.remove();
             textarea.value = text;
             textarea.dispatchEvent(new Event('input'));
             sendMessage();
         });
-        row.appendChild(bubble);
+        row.appendChild(btn);
     });
     messagesWrapper.appendChild(row);
     scrollToBottom();
 }
 
 
-// ── Main send logic ───────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//  MAIN SEND
+// ═══════════════════════════════════════════════════════════════════════════════
 async function sendMessage() {
     const text = textarea.value.trim();
     if (!text) return;
@@ -126,101 +251,96 @@ async function sendMessage() {
     if (existingSuggestions) existingSuggestions.remove();
 
     appendUserMessage(text);
-    textarea.value = '';
-    textarea.style.height   = '1.5rem';
+    textarea.value           = '';
+    textarea.style.height    = '1.5rem';
     textarea.style.overflowY = 'hidden';
     inputWrapper.classList.remove('multiline');
     scrollToBottom();
 
-    const botRow = appendBotMessage('');
-    const responseTextElement = botRow.querySelector('p');
-    let fullBotResponse = '';
+    const botRow             = appendBotMessage();
+    const contentDiv         = botRow.querySelector('.bot-content');
+    let   rawText            = '';   // accumulates the full raw response
+    let   fullBotResponse    = '';
 
     try {
         const response = await fetch(`${NGROK_URL}/api/generate`, {
             method:  'POST',
-            headers: NGROK_HEADERS,           // ← ngrok-skip-browser-warning here
-            body: JSON.stringify({
-                model:  MODEL_NAME,
-                prompt: text,                 // raw prompt — Flask injects knowledgebase
-                stream: true,
-            }),
+            headers: NGROK_HEADERS,
+            body: JSON.stringify({ model: MODEL_NAME, prompt: text, stream: true }),
         });
 
-        // Non-2xx → throw with the status code attached
         if (!response.ok) {
-            const err = new Error("HTTP_ERROR");
+            const err  = new Error("HTTP_ERROR");
             err.status = response.status;
             throw err;
         }
 
         currentReader      = response.body.getReader();
-        const reader       = currentReader;
         const decoder      = new TextDecoder();
         let   buffer       = '';
 
         while (true) {
-            const { done, value } = await reader.read();
+            const { done, value } = await currentReader.read();
             if (done) break;
 
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
-            buffer = lines.pop();           // keep incomplete trailing line
+            buffer = lines.pop();
 
             for (const line of lines) {
                 if (!line.trim()) continue;
                 try {
                     const chunk = JSON.parse(line);
                     if (chunk.response) {
-                        responseTextElement.textContent += chunk.response;
-                        fullBotResponse               += chunk.response;
+                        rawText          += chunk.response;
+                        fullBotResponse  += chunk.response;
+
+                        // Re-render the whole accumulated text on each chunk.
+                        // This keeps markdown rendering consistent even mid-stream.
+                        contentDiv.innerHTML = '';
+                        contentDiv.appendChild(renderMarkdown(rawText));
                         scrollToBottom();
                     }
                 } catch {
-                    console.warn("[JILIAN] Skipped malformed JSON chunk:", line);
+                    // malformed chunk — skip silently
                 }
             }
         }
 
     } catch (error) {
-        // ── Error code reference (internal) ──────────────────────────────────
-        //   0  → Network failure / ngrok tunnel offline / no internet
-        // 401  → CORS rejection or OLLAMA_ORIGINS misconfigured
-        // 403  → ngrok blocked the request (IP / plan limit)
-        // 404  → Wrong endpoint path or stale ngrok URL
-        // 408  → Request timed out — model slow or server unresponsive
-        // 500  → Flask or Ollama internal crash
-        // 503  → Flask or Ollama not running / tunnel down
-        //
-        // Most common on external devices:
-        //   • Error 0   → ngrok URL still points to Ollama:11434 instead of Flask:5000
-        //                 OR the ngrok-skip-browser-warning header is missing
-        //   • Error 500 → Flask threw an unhandled exception (check WSL terminal)
+        // ── Error code reference ──────────────────────────────────────────────
+        //   0  → Network failure / tunnel offline / missing ngrok-skip header
+        // 401  → CORS / OLLAMA_ORIGINS misconfigured
+        // 403  → ngrok rate-limited or blocked
+        // 404  → Wrong endpoint / stale ngrok URL
+        // 408  → Request timed out
+        // 500  → Flask or Ollama crash (check WSL terminal for traceback)
+        // 503  → Flask/Ollama not running
 
         if (error.name === 'AbortError' || error.message?.includes('cancel')) {
-            // User pressed Stop — silent exit
+            // Stop button — silent exit, keep whatever was rendered
         } else {
-            let code;
+            let code = 500;
             if      (error.status === 401) code = 401;
             else if (error.status === 403) code = 403;
             else if (error.status === 404) code = 404;
             else if (error.status === 408) code = 408;
-            else if (error.status === 500) code = 500;
             else if (error.status === 503) code = 503;
             else if (error instanceof TypeError && error.message?.includes('fetch')) code = 0;
-            else code = 500;
 
             console.error(`[JILIAN Error ${code}]`, error);
-            responseTextElement.textContent =
-                `Sorry, I couldn't generate a response. (Error ${code})`;
+            contentDiv.innerHTML = '';
+            const p = document.createElement('p');
+            p.textContent = `Sorry, I couldn't generate a response. (Error ${code})`;
+            contentDiv.appendChild(p);
         }
 
     } finally {
-        isGenerating      = false;
-        sendBtn.style.display = 'flex';
-        sendBtn.disabled  = false;
+        isGenerating           = false;
+        sendBtn.style.display  = 'flex';
+        sendBtn.disabled       = false;
         if (stopBtn) stopBtn.style.setProperty('display', 'none', 'important');
-        currentReader     = null;
+        currentReader          = null;
 
         if (fullBotResponse) {
             const suggestions = await fetchSuggestions(text, fullBotResponse);
@@ -230,30 +350,33 @@ async function sendMessage() {
 }
 
 
-// ── DOM helpers ───────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//  DOM HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
 function appendUserMessage(text) {
-    const row    = document.createElement('div');
-    row.className = 'message-row user';
-    const bubble  = document.createElement('div');
+    const row      = document.createElement('div');
+    row.className  = 'message-row user';
+    const bubble   = document.createElement('div');
     bubble.className   = 'user-bubble';
     bubble.textContent = text;
     row.appendChild(bubble);
     messagesWrapper.appendChild(row);
 }
 
-function appendBotMessage(text) {
-    const row     = document.createElement('div');
-    row.className  = 'message-row bot';
+/**
+ * Append an empty bot message row and return it.
+ * The caller writes into .bot-content directly.
+ */
+function appendBotMessage() {
+    const row    = document.createElement('div');
+    row.className = 'message-row bot';
 
-    const avatar   = document.createElement('div');
+    const avatar = document.createElement('div');
     avatar.className = 'bot-avatar';
     avatar.innerHTML = `<img src="assets/image.png" alt="Bot Picture">`;
 
-    const content  = document.createElement('div');
+    const content = document.createElement('div');
     content.className = 'bot-content';
-    const p        = document.createElement('p');
-    p.textContent  = text;
-    content.appendChild(p);
 
     row.appendChild(avatar);
     row.appendChild(content);
