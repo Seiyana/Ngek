@@ -5,9 +5,9 @@ const chatContainer = document.getElementById('chat-container');
 const themeToggle = document.getElementById('theme-toggle');
 
 // --- OLLAMA CONFIGURATION ---
-const NGROK_URL = "http://localhost:5000"; // PASTE YOUR NGROK URL HERE
+const NGROK_URL = "https://inge-unidolized-kaylee.ngrok-free.dev"; // PASTE YOUR NGROK URL HERE
 const MODEL_NAME = "qwen2.5:32b";
-let isGenerating = false; 
+let isGenerating = false;
 let currentReader = null;
 
 // Theme Toggle Logic
@@ -16,10 +16,30 @@ themeToggle.addEventListener('click', () => {
     themeToggle.textContent = document.body.classList.contains('dark-mode') ? 'Light Mode' : 'Dark Mode';
 });
 
-// Auto-resize textarea
+// Auto-resize textarea — grows freely up to 6 lines, scrollable after
+const LINE_HEIGHT = 24; // px, matches CSS line-height: 1.5rem at 16px base
+const MAX_LINES = 6;
+const MAX_HEIGHT = LINE_HEIGHT * MAX_LINES;
+const inputWrapper = document.querySelector('.input-wrapper');
+
 textarea.addEventListener('input', function() {
-    this.style.height = '24px'; 
-    this.style.height = Math.min(this.scrollHeight, 200) + 'px'; 
+    this.style.height = 'auto'; // reset so scrollHeight reflects true content
+    const newHeight = this.scrollHeight;
+
+    if (newHeight <= MAX_HEIGHT) {
+        this.style.height = newHeight + 'px';
+        this.style.overflowY = 'hidden';
+    } else {
+        this.style.height = MAX_HEIGHT + 'px';
+        this.style.overflowY = 'auto';
+    }
+
+    // Align buttons to bottom when multiline, center when single line
+    if (newHeight > LINE_HEIGHT + 8) {
+        inputWrapper.classList.add('multiline');
+    } else {
+        inputWrapper.classList.remove('multiline');
+    }
 });
 
 textarea.addEventListener('keydown', (e) => {
@@ -32,6 +52,15 @@ textarea.addEventListener('keydown', (e) => {
 sendBtn.addEventListener('click', () => {
     if (!isGenerating) sendMessage();
 });
+
+// Stop button
+const stopBtn = document.getElementById('stop-btn');
+if (stopBtn) {
+    stopBtn.addEventListener('click', () => {
+        if (currentReader) currentReader.cancel();
+    });
+}
+
 
 async function fetchSuggestions(userPrompt, botResponse) {
     try {
@@ -48,8 +77,12 @@ async function fetchSuggestions(userPrompt, botResponse) {
     }
 }
 
-function appendSuggestions(suggestions, originalPrompt) {
+function appendSuggestions(suggestions) {
     if (!suggestions.length) return;
+
+    // Remove any previous suggestion row
+    const existing = document.querySelector('.suggestions-row');
+    if (existing) existing.remove();
 
     const row = document.createElement('div');
     row.className = 'suggestions-row';
@@ -59,12 +92,9 @@ function appendSuggestions(suggestions, originalPrompt) {
         bubble.className = 'suggestion-bubble';
         bubble.textContent = text;
         bubble.addEventListener('click', () => {
-            // Remove suggestions after clicking
             row.remove();
-            // Set the textarea to the suggestion and send
             textarea.value = text;
-            textarea.style.height = '24px';
-            textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+            textarea.dispatchEvent(new Event('input')); // trigger resize
             sendMessage();
         });
         row.appendChild(bubble);
@@ -80,15 +110,17 @@ async function sendMessage() {
 
     isGenerating = true;
     sendBtn.style.display = 'none';
-    stopBtn.style.setProperty('display', 'flex', 'important');
+    if (stopBtn) stopBtn.style.setProperty('display', 'flex', 'important');
 
-    // Remove any existing suggestion bubbles
+    // Remove any existing suggestion row
     const existingSuggestions = document.querySelector('.suggestions-row');
     if (existingSuggestions) existingSuggestions.remove();
 
     appendUserMessage(text);
     textarea.value = '';
-    textarea.style.height = '24px';
+    textarea.style.height = '1.5rem';
+    textarea.style.overflowY = 'hidden';
+    inputWrapper.classList.remove('multiline');
     scrollToBottom();
 
     const botRow = appendBotMessage("");
@@ -98,30 +130,39 @@ async function sendMessage() {
     try {
         const response = await fetch(`${NGROK_URL}/api/generate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json',
+             },
+           
             body: JSON.stringify({
                 model: MODEL_NAME,
                 prompt: text,
-                stream: true
+                stream: true 
             })
         });
 
-        if (!response.ok) throw new Error("Network response was not ok");
+        if (!response.ok) {
+            const err = new Error("HTTP_ERROR");
+            err.status = response.status;
+            throw err;
+        }
 
         currentReader = response.body.getReader();
+        const reader = currentReader;
         const decoder = new TextDecoder();
-        let buffer = '';
+        let buffer = ''; 
 
         while (true) {
-            const { done, value } = await currentReader.read();
+            const { done, value } = await reader.read();
             if (done) break;
 
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
-            buffer = lines.pop();
+            
+            buffer = lines.pop(); 
 
             for (const line of lines) {
                 if (!line.trim()) continue;
+                
                 try {
                     const json = JSON.parse(line);
                     if (json.response) {
@@ -134,37 +175,46 @@ async function sendMessage() {
                 }
             }
         }
-
     } catch (error) {
-        if (error.name === 'AbortError' || error.message.includes('cancel')) {
-            // Stream cancelled by user, do nothing
-        } else {
-            responseTextElement.textContent = "Error: Could not connect to Ollama. Check your server and ensure OLLAMA_ORIGINS='*' is set.";
-            console.error(error);
-        }
+        // --- Internal error code reference (never shown to user) ---
+        // 401 → OLLAMA_ORIGINS not set / CORS rejection from Ollama
+        // 403 → Ngrok or proxy blocked the request
+        // 404 → Wrong endpoint path or ngrok URL is outdated
+        // 408 → Request timed out — model too slow or server unresponsive
+        // 500 → Ollama internal crash or model failed to load
+        // 503 → Ollama not running or ngrok tunnel is down
+        // 0   → Network-level failure — no internet, fetch blocked, tunnel offline
 
+        let displayCode;
+
+        if (error.name === 'AbortError' || error.message?.includes('cancel')) {
+            // User intentionally stopped — not an error, exit silently
+        } else {
+            if (error.status === 401) displayCode = 401;
+            else if (error.status === 403) displayCode = 403;
+            else if (error.status === 404) displayCode = 404;
+            else if (error.status === 408) displayCode = 408;
+            else if (error.status === 500) displayCode = 500;
+            else if (error.status === 503) displayCode = 503;
+            else if (error instanceof TypeError && error.message?.includes('fetch')) displayCode = 0;
+            else displayCode = 500;
+
+            console.error(`[SeiBot Error ${displayCode}]`, error);
+            responseTextElement.textContent = `Sorry, I couldn't generate a response. Error ${displayCode}`;
+        }
     } finally {
         isGenerating = false;
         sendBtn.style.display = 'flex';
-        stopBtn.style.setProperty('display', 'none', 'important');
         sendBtn.disabled = false;
+        if (stopBtn) stopBtn.style.setProperty('display', 'none', 'important');
         currentReader = null;
 
-        // Only fetch suggestions if there was a valid response
         if (fullBotResponse) {
             const suggestions = await fetchSuggestions(text, fullBotResponse);
-            appendSuggestions(suggestions, text);
+            appendSuggestions(suggestions);
         }
     }
 }
-
-// Add stop button logic
-const stopBtn = document.getElementById('stop-btn');
-stopBtn.addEventListener('click', () => {
-    if (currentReader) {
-        currentReader.cancel();
-    }
-});
 
 function appendUserMessage(text) {
     const row = document.createElement('div');
