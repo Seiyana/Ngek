@@ -4,61 +4,62 @@ const messagesWrapper = document.getElementById('messages-wrapper');
 const chatContainer = document.getElementById('chat-container');
 const themeToggle = document.getElementById('theme-toggle');
 
-// --- OLLAMA CONFIGURATION ---
-const NGROK_URL = "http://localhost:5000"; // PASTE YOUR NGROK URL HERE
+// ── CONFIGURATION ─────────────────────────────────────────────────────────────
+// ⚠️  Point this at your Flask server (port 5000), NOT Ollama (11434).
+//     In WSL, run:  ngrok http 5000   then paste the URL below.
+const NGROK_URL  = "https://inge-unidolized-kaylee.ngrok-free.dev"; // ← update each session
 const MODEL_NAME = "qwen2.5:32b";
-let isGenerating = false;
+
+// Required on every request to ngrok — without this, ngrok shows an HTML
+// interstitial warning page to external browsers instead of forwarding the
+// request, which causes Error 0 / Error 500 on all non-desktop devices.
+const NGROK_HEADERS = {
+    "Content-Type": "application/json",
+    "ngrok-skip-browser-warning": "true",
+};
+// ─────────────────────────────────────────────────────────────────────────────
+
+let isGenerating  = false;
 let currentReader = null;
 
-// Theme Toggle Logic
+// ── Theme toggle ──────────────────────────────────────────────────────────────
 themeToggle.addEventListener('click', () => {
     document.body.classList.toggle('dark-mode');
-    themeToggle.textContent = document.body.classList.contains('dark-mode') ? 'Light Mode' : 'Dark Mode';
+    themeToggle.textContent = document.body.classList.contains('dark-mode')
+        ? 'Light Mode' : 'Dark Mode';
 });
 
-// Auto-resize textarea — grows freely up to 6 lines, scrollable after
-const LINE_HEIGHT = 24; // px, matches CSS line-height: 1.5rem at 16px base
-const MAX_LINES = 6;
-const MAX_HEIGHT = LINE_HEIGHT * MAX_LINES;
+// ── Auto-resize textarea ──────────────────────────────────────────────────────
+const LINE_HEIGHT  = 24;
+const MAX_LINES    = 6;
+const MAX_HEIGHT   = LINE_HEIGHT * MAX_LINES;
 const inputWrapper = document.querySelector('.input-wrapper');
 
-textarea.addEventListener('input', function() {
-    this.style.height = 'auto'; // reset so scrollHeight reflects true content
+textarea.addEventListener('input', function () {
+    this.style.height = 'auto';
     const newHeight = this.scrollHeight;
-
     if (newHeight <= MAX_HEIGHT) {
-        this.style.height = newHeight + 'px';
+        this.style.height   = newHeight + 'px';
         this.style.overflowY = 'hidden';
     } else {
-        this.style.height = MAX_HEIGHT + 'px';
+        this.style.height   = MAX_HEIGHT + 'px';
         this.style.overflowY = 'auto';
     }
-
-    // Align buttons to bottom when multiline, center when single line
-    if (newHeight > LINE_HEIGHT + 8) {
-        inputWrapper.classList.add('multiline');
-    } else {
-        inputWrapper.classList.remove('multiline');
-    }
+    inputWrapper.classList.toggle('multiline', newHeight > LINE_HEIGHT + 8);
 });
 
 textarea.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault(); 
+        e.preventDefault();
         if (!isGenerating) sendMessage();
     }
 });
 
-sendBtn.addEventListener('click', () => {
-    if (!isGenerating) sendMessage();
-});
+sendBtn.addEventListener('click', () => { if (!isGenerating) sendMessage(); });
 
-// Stop button
 const stopBtn = document.getElementById('stop-btn');
 if (stopBtn) {
-    stopBtn.addEventListener('click', () => {
-        if (currentReader) currentReader.cancel();
-    });
+    stopBtn.addEventListener('click', () => { if (currentReader) currentReader.cancel(); });
 }
 
 document.querySelectorAll('.suggestions-row .suggestion-bubble').forEach(bubble => {
@@ -71,31 +72,30 @@ document.querySelectorAll('.suggestions-row .suggestion-bubble').forEach(bubble 
 });
 
 
+// ── Suggestions ───────────────────────────────────────────────────────────────
 async function fetchSuggestions(userPrompt, botResponse) {
     try {
         const res = await fetch(`${NGROK_URL}/api/suggest`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt: userPrompt, response: botResponse })
+            method:  'POST',
+            headers: NGROK_HEADERS,           // ← ngrok header required here too
+            body:    JSON.stringify({ prompt: userPrompt, response: botResponse }),
         });
+        if (!res.ok) return [];
         const data = await res.json();
         return data.suggestions || [];
     } catch (e) {
-        console.error("Suggestions error:", e);
+        console.error("[JILIAN] Suggestions error:", e);
         return [];
     }
 }
 
 function appendSuggestions(suggestions) {
     if (!suggestions.length) return;
-
-    // Remove any previous suggestion row
     const existing = document.querySelector('.suggestions-row');
     if (existing) existing.remove();
 
     const row = document.createElement('div');
     row.className = 'suggestions-row';
-
     suggestions.forEach(text => {
         const bubble = document.createElement('button');
         bubble.className = 'suggestion-bubble';
@@ -103,16 +103,17 @@ function appendSuggestions(suggestions) {
         bubble.addEventListener('click', () => {
             row.remove();
             textarea.value = text;
-            textarea.dispatchEvent(new Event('input')); // trigger resize
+            textarea.dispatchEvent(new Event('input'));
             sendMessage();
         });
         row.appendChild(bubble);
     });
-
     messagesWrapper.appendChild(row);
     scrollToBottom();
 }
 
+
+// ── Main send logic ───────────────────────────────────────────────────────────
 async function sendMessage() {
     const text = textarea.value.trim();
     if (!text) return;
@@ -121,44 +122,42 @@ async function sendMessage() {
     sendBtn.style.display = 'none';
     if (stopBtn) stopBtn.style.setProperty('display', 'flex', 'important');
 
-    // Remove any existing suggestion row
     const existingSuggestions = document.querySelector('.suggestions-row');
     if (existingSuggestions) existingSuggestions.remove();
 
     appendUserMessage(text);
     textarea.value = '';
-    textarea.style.height = '1.5rem';
+    textarea.style.height   = '1.5rem';
     textarea.style.overflowY = 'hidden';
     inputWrapper.classList.remove('multiline');
     scrollToBottom();
 
-    const botRow = appendBotMessage("");
+    const botRow = appendBotMessage('');
     const responseTextElement = botRow.querySelector('p');
     let fullBotResponse = '';
 
     try {
         const response = await fetch(`${NGROK_URL}/api/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json',
-             },
-           
+            method:  'POST',
+            headers: NGROK_HEADERS,           // ← ngrok-skip-browser-warning here
             body: JSON.stringify({
-                model: MODEL_NAME,
-                prompt: text,
-                stream: true 
-            })
+                model:  MODEL_NAME,
+                prompt: text,                 // raw prompt — Flask injects knowledgebase
+                stream: true,
+            }),
         });
 
+        // Non-2xx → throw with the status code attached
         if (!response.ok) {
             const err = new Error("HTTP_ERROR");
             err.status = response.status;
             throw err;
         }
 
-        currentReader = response.body.getReader();
-        const reader = currentReader;
-        const decoder = new TextDecoder();
-        let buffer = ''; 
+        currentReader      = response.body.getReader();
+        const reader       = currentReader;
+        const decoder      = new TextDecoder();
+        let   buffer       = '';
 
         while (true) {
             const { done, value } = await reader.read();
@@ -166,57 +165,62 @@ async function sendMessage() {
 
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
-            
-            buffer = lines.pop(); 
+            buffer = lines.pop();           // keep incomplete trailing line
 
             for (const line of lines) {
                 if (!line.trim()) continue;
-                
                 try {
-                    const json = JSON.parse(line);
-                    if (json.response) {
-                        responseTextElement.textContent += json.response;
-                        fullBotResponse += json.response;
+                    const chunk = JSON.parse(line);
+                    if (chunk.response) {
+                        responseTextElement.textContent += chunk.response;
+                        fullBotResponse               += chunk.response;
                         scrollToBottom();
                     }
-                } catch (e) {
-                    console.error("Skipped malformed JSON chunk:", line);
+                } catch {
+                    console.warn("[JILIAN] Skipped malformed JSON chunk:", line);
                 }
             }
         }
-    } catch (error) {
-        // --- Internal error code reference (never shown to user) ---
-        // 401 → OLLAMA_ORIGINS not set / CORS rejection from Ollama
-        // 403 → Ngrok or proxy blocked the request
-        // 404 → Wrong endpoint path or ngrok URL is outdated
-        // 408 → Request timed out — model too slow or server unresponsive
-        // 500 → Ollama internal crash or model failed to load
-        // 503 → Ollama not running or ngrok tunnel is down
-        // 0   → Network-level failure — no internet, fetch blocked, tunnel offline
 
-        let displayCode;
+    } catch (error) {
+        // ── Error code reference (internal) ──────────────────────────────────
+        //   0  → Network failure / ngrok tunnel offline / no internet
+        // 401  → CORS rejection or OLLAMA_ORIGINS misconfigured
+        // 403  → ngrok blocked the request (IP / plan limit)
+        // 404  → Wrong endpoint path or stale ngrok URL
+        // 408  → Request timed out — model slow or server unresponsive
+        // 500  → Flask or Ollama internal crash
+        // 503  → Flask or Ollama not running / tunnel down
+        //
+        // Most common on external devices:
+        //   • Error 0   → ngrok URL still points to Ollama:11434 instead of Flask:5000
+        //                 OR the ngrok-skip-browser-warning header is missing
+        //   • Error 500 → Flask threw an unhandled exception (check WSL terminal)
 
         if (error.name === 'AbortError' || error.message?.includes('cancel')) {
-            // User intentionally stopped — not an error, exit silently
+            // User pressed Stop — silent exit
         } else {
-            if (error.status === 401) displayCode = 401;
-            else if (error.status === 403) displayCode = 403;
-            else if (error.status === 404) displayCode = 404;
-            else if (error.status === 408) displayCode = 408;
-            else if (error.status === 500) displayCode = 500;
-            else if (error.status === 503) displayCode = 503;
-            else if (error instanceof TypeError && error.message?.includes('fetch')) displayCode = 0;
-            else displayCode = 500;
+            let code;
+            if      (error.status === 401) code = 401;
+            else if (error.status === 403) code = 403;
+            else if (error.status === 404) code = 404;
+            else if (error.status === 408) code = 408;
+            else if (error.status === 500) code = 500;
+            else if (error.status === 503) code = 503;
+            else if (error instanceof TypeError && error.message?.includes('fetch')) code = 0;
+            else code = 500;
 
-            console.error(`[SeiBot Error ${displayCode}]`, error);
-            responseTextElement.textContent = `Sorry, I couldn't generate a response. Error ${displayCode}`;
+            console.error(`[JILIAN Error ${code}]`, error);
+            responseTextElement.textContent =
+                `Sorry, I couldn't generate a response. (Error ${code})`;
         }
+
     } finally {
-        isGenerating = false;
+        isGenerating      = false;
         sendBtn.style.display = 'flex';
-        sendBtn.disabled = false;
+        sendBtn.disabled  = false;
         if (stopBtn) stopBtn.style.setProperty('display', 'none', 'important');
-        currentReader = null;
+        currentReader     = null;
 
         if (fullBotResponse) {
             const suggestions = await fetchSuggestions(text, fullBotResponse);
@@ -225,34 +229,36 @@ async function sendMessage() {
     }
 }
 
+
+// ── DOM helpers ───────────────────────────────────────────────────────────────
 function appendUserMessage(text) {
-    const row = document.createElement('div');
+    const row    = document.createElement('div');
     row.className = 'message-row user';
-    const bubble = document.createElement('div');
-    bubble.className = 'user-bubble';
-    bubble.textContent = text; 
+    const bubble  = document.createElement('div');
+    bubble.className   = 'user-bubble';
+    bubble.textContent = text;
     row.appendChild(bubble);
     messagesWrapper.appendChild(row);
 }
 
 function appendBotMessage(text) {
-    const row = document.createElement('div');
-    row.className = 'message-row bot';
-    const avatar = document.createElement('div');
+    const row     = document.createElement('div');
+    row.className  = 'message-row bot';
+
+    const avatar   = document.createElement('div');
     avatar.className = 'bot-avatar';
-    
-    avatar.innerHTML = `<img src="assets/image.png" alt="Bot Picture">`; 
-    
-    const content = document.createElement('div');
+    avatar.innerHTML = `<img src="assets/image.png" alt="Bot Picture">`;
+
+    const content  = document.createElement('div');
     content.className = 'bot-content';
-    const p = document.createElement('p');
-    p.textContent = text;
+    const p        = document.createElement('p');
+    p.textContent  = text;
     content.appendChild(p);
 
     row.appendChild(avatar);
     row.appendChild(content);
     messagesWrapper.appendChild(row);
-    return row; 
+    return row;
 }
 
 function scrollToBottom() {
