@@ -61,6 +61,15 @@ if (stopBtn) {
     });
 }
 
+document.querySelectorAll('.suggestions-row .suggestion-bubble').forEach(bubble => {
+    bubble.addEventListener('click', () => {
+        bubble.closest('.suggestions-row').remove();
+        textarea.value = bubble.textContent;
+        textarea.dispatchEvent(new Event('input'));
+        sendMessage();
+    });
+});
+
 
 async function fetchSuggestions(userPrompt, botResponse) {
     try {
