@@ -5,7 +5,7 @@ const chatContainer = document.getElementById('chat-container');
 const themeToggle = document.getElementById('theme-toggle');
 
 // --- OLLAMA CONFIGURATION ---
-const NGROK_URL = "https://inge-unidolized-kaylee.ngrok-free.dev"; // PASTE YOUR NGROK URL HERE
+const NGROK_URL = "http://localhost:5000"; // PASTE YOUR NGROK URL HERE
 const MODEL_NAME = "qwen2.5:32b";
 let isGenerating = false;
 let currentReader = null;
