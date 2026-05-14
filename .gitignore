@@ -30,5 +30,6 @@ instance/
 node_modules/
 npm-debug.log*
 
-# Ngrok
-# (Keep your ngrok config out of the repo)
+# Project Specific
+server.py
+knowledgebase.txt
