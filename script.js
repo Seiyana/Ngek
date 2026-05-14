@@ -138,23 +138,32 @@ function renderMarkdown(rawText) {
         let isThinking  = false;
 
         if (thinkEnd !== -1) {
-            // We have a full block
             thoughtText     = rawText.slice(thinkStart + 7, thinkEnd).trim();
             mainContentText = rawText.slice(thinkEnd + 8).trim();
         } else {
-            // Still thinking...
             thoughtText     = rawText.slice(thinkStart + 7).trim();
-            mainContentText = ""; // Don't show main content until thinking is done
+            mainContentText = "";
             isThinking      = true;
         }
 
-        if (thoughtText) {
+        if (thoughtText || isThinking) {
             const thoughtDiv = document.createElement('div');
             thoughtDiv.className = 'thought-container' + (isThinking ? ' is-thinking' : '');
-
+            
             const contentDiv = document.createElement('div');
             contentDiv.className = 'thought-content';
-            contentDiv.textContent = thoughtText;
+            
+            if (thoughtText) {
+                contentDiv.textContent = thoughtText;
+            }
+            
+            if (isThinking) {
+                // Add the waving "..." dots
+                const dots = document.createElement('div');
+                dots.className = 'typing-dots';
+                dots.innerHTML = '<span></span><span></span><span></span>';
+                contentDiv.appendChild(dots);
+            }
 
             thoughtDiv.appendChild(contentDiv);
             container.appendChild(thoughtDiv);
@@ -163,7 +172,7 @@ function renderMarkdown(rawText) {
 
     if (!mainContentText) return container;
 
-    // ── Standard Markdown Rendering ───────────────────────────────────────────
+    // ── Improved Markdown Rendering (Handles continuous lists) ────────────────
     const lines     = mainContentText.split('\n');
     let currentUl   = null;
     let currentOl   = null;
@@ -178,7 +187,11 @@ function renderMarkdown(rawText) {
         const trim = line.trim();
 
         if (!trim) {
-            flushLists();
+            // Only flush lists on empty lines if the NEXT line isn't also a list item
+            const nextLine = lines[i+1]?.trim() || "";
+            if (!nextLine.match(/^([-*]|\d+\.)\s+/)) {
+                flushLists();
+            }
             continue;
         }
 
@@ -194,11 +207,16 @@ function renderMarkdown(rawText) {
 
         const ulMatch = trim.match(/^[-*]\s+(.+)/);
         if (ulMatch) {
-            if (currentOl) { container.appendChild(currentOl); currentOl = null; }
+            // Keep the OL alive if it exists so numbering continues
             if (!currentUl) currentUl = document.createElement('ul');
             const li = document.createElement('li');
             li.appendChild(parseInline(ulMatch[1]));
             currentUl.appendChild(li);
+            // If we are inside an OL, append the UL to the last LI instead of the container
+            if (currentOl && currentOl.lastElementChild) {
+                currentOl.lastElementChild.appendChild(currentUl);
+                currentUl = null; // reset for next use
+            }
             continue;
         }
 
@@ -289,6 +307,10 @@ async function sendMessage() {
 
     const botRow             = appendBotMessage();
     const contentDiv         = botRow.querySelector('.bot-content');
+    
+    // Show immediate typing dots while waiting for the first chunk
+    contentDiv.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+    
     let   rawText            = '';   // accumulates the full raw response
     let   fullBotResponse    = '';
 

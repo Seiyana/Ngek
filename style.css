@@ -463,6 +463,33 @@ body.dark-mode .suggestion-bubble:hover  {
     .bot-identity span { max-width: 150px; }
 }
 
+/* ── Typing Indicator ───────────────────────────────────────────────────── */
+.typing-dots {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    padding: 8px 0;
+    min-height: 20px;
+}
+
+.typing-dots span {
+    width: 7px;
+    height: 7px;
+    background-color: var(--text-primary);
+    border-radius: 50%;
+    opacity: 0.7;
+    animation: wave 1.3s infinite ease-in-out;
+}
+
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes wave {
+    0%, 60%, 100% { transform: translateY(0); }
+    30%          { transform: translateY(-6px); }
+}
+
+
 /* ── DeepSeek Thinking Block ─────────────────────────────────────────────── */
 .thought-container {
     background-color: rgba(201, 150, 12, 0.05);
@@ -512,4 +539,4 @@ body.dark-mode .thought-container {
 @keyframes thinking-glow {
     0% { transform: translateX(-100%); }
     100% { transform: translateX(100%); }
-}
+}
