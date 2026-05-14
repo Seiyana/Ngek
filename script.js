@@ -7,7 +7,7 @@ const themeToggle     = document.getElementById('theme-toggle');
 // ── CONFIGURATION ─────────────────────────────────────────────────────────────
 // ⚠️  Point this at Flask (port 5000).  Run:  ngrok http 5000
 const NGROK_URL  = "https://inge-unidolized-kaylee.ngrok-free.dev"; // ← update each session
-const MODEL_NAME = "qwen2.5:32b";
+const MODEL_NAME = "deepseek-r1:8b";
 
 // ngrok-skip-browser-warning MUST be on every request or external devices
 // receive an HTML interstitial page instead of JSON → Error 0 / Error 500.
