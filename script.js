@@ -127,10 +127,46 @@ function parseInline(text) {
  */
 function renderMarkdown(rawText) {
     const container = document.createDocumentFragment();
-    const lines     = rawText.split('\n');
 
-    let currentUl   = null;   // active <ul> being built
-    let currentOl   = null;   // active <ol> being built
+    let mainContentText = rawText;
+
+    // ── Handle DeepSeek <think> tags ──────────────────────────────────────────
+    const thinkStart = rawText.indexOf('<think>');
+    if (thinkStart !== -1) {
+        const thinkEnd = rawText.indexOf('</think>');
+        let thoughtText = "";
+        let isThinking  = false;
+
+        if (thinkEnd !== -1) {
+            // We have a full block
+            thoughtText     = rawText.slice(thinkStart + 7, thinkEnd).trim();
+            mainContentText = rawText.slice(thinkEnd + 8).trim();
+        } else {
+            // Still thinking...
+            thoughtText     = rawText.slice(thinkStart + 7).trim();
+            mainContentText = ""; // Don't show main content until thinking is done
+            isThinking      = true;
+        }
+
+        if (thoughtText) {
+            const thoughtDiv = document.createElement('div');
+            thoughtDiv.className = 'thought-container' + (isThinking ? ' is-thinking' : '');
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'thought-content';
+            contentDiv.textContent = thoughtText;
+
+            thoughtDiv.appendChild(contentDiv);
+            container.appendChild(thoughtDiv);
+        }
+    }
+
+    if (!mainContentText) return container;
+
+    // ── Standard Markdown Rendering ───────────────────────────────────────────
+    const lines     = mainContentText.split('\n');
+    let currentUl   = null;
+    let currentOl   = null;
 
     function flushLists() {
         if (currentUl) { container.appendChild(currentUl); currentUl = null; }
@@ -141,27 +177,23 @@ function renderMarkdown(rawText) {
         const line = lines[i];
         const trim = line.trim();
 
-        // ── Empty line ────────────────────────────────────────────────────────
         if (!trim) {
             flushLists();
             continue;
         }
 
-        // ── Headings ──────────────────────────────────────────────────────────
         const headingMatch = trim.match(/^(#{1,3})\s+(.+)/);
         if (headingMatch) {
             flushLists();
-            const level = Math.min(headingMatch[1].length + 2, 6); // h3–h5 range
+            const level = Math.min(headingMatch[1].length + 2, 6);
             const h = document.createElement(`h${level}`);
             h.appendChild(parseInline(headingMatch[2]));
             container.appendChild(h);
             continue;
         }
 
-        // ── Unordered list item  (- text  or  * text) ────────────────────────
         const ulMatch = trim.match(/^[-*]\s+(.+)/);
         if (ulMatch) {
-            flushLists();   // don't flush the UL we're building — just OL
             if (currentOl) { container.appendChild(currentOl); currentOl = null; }
             if (!currentUl) currentUl = document.createElement('ul');
             const li = document.createElement('li');
@@ -170,7 +202,6 @@ function renderMarkdown(rawText) {
             continue;
         }
 
-        // ── Ordered list item  (1. text) ─────────────────────────────────────
         const olMatch = trim.match(/^\d+\.\s+(.+)/);
         if (olMatch) {
             if (currentUl) { container.appendChild(currentUl); currentUl = null; }
@@ -181,14 +212,13 @@ function renderMarkdown(rawText) {
             continue;
         }
 
-        // ── Regular paragraph ─────────────────────────────────────────────────
         flushLists();
         const p = document.createElement('p');
         p.appendChild(parseInline(trim));
         container.appendChild(p);
     }
 
-    flushLists(); // append any list still open at end of text
+    flushLists();
     return container;
 }
 
